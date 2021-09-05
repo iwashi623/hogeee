@@ -44,14 +44,14 @@ jobs:
 
       # ジョブ起動時に内容をチェックして、インストールすべき対象に変更がなければ、キャッシュを利用
       - name: Cache composer
-         id: cache-composer
-         #  キャッシュの復元
-         uses: actions/cache@v2
-         with:
-          # pathに指定したディレクトリもしくはファイルを、keyに指定した名前でキャッシュ
-           path: backend/vendor
-          #  backend/composer.lockのSHA256ハッシュをkeyに含める
-           key: composer-v1-${{ hashFiles('backend/composer.lock') }}
+        id: cache-composer
+        #  キャッシュの復元
+        uses: actions/cache@v2
+        with:
+        # pathに指定したディレクトリもしくはファイルを、keyに指定した名前でキャッシュ
+          path: backend/vendor
+        #  backend/composer.lockのSHA256ハッシュをkeyに含める
+          key: composer-v1-${{ hashFiles('backend/composer.lock') }}
 
       # composer installで質問されても答えられないので -n オプションを付ける
       - run: docker-compose exec -T app composer install -n --prefer-dist--no-dev
