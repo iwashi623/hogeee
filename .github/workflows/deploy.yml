@@ -1,0 +1,28 @@
+name: deploy
+
+on: 
+  #ブランチにコミットがプッシュされたときに処理が開始
+  push:
+    branches:
+      - main
+      - feature/push_images_to_ecr
+
+env:
+  AWS_REGION: ap-northeast-1
+
+# Workflows > jobs > stepsという階層構造
+jobs:
+  deploy:
+    name: Deploy app to AWS Fargate
+    # runs-onは、ワークフローが実行される環境のOSやバージョン
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure aws credentials for prod
+        # ↓ mainブランチであるときのみ、このステップが処理される条件分岐（STGのときはdevelopにするなどする）
+        # if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          # ${{}} はgihub.refコンテキストを参照
+          aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }} 
+          aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
