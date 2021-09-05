@@ -54,7 +54,7 @@ jobs:
           key: composer-v1-${{ hashFiles('backend/composer.lock') }}
 
       # composer installで質問されても答えられないので -n オプションを付ける
-      - run: docker-compose exec -T app composer install -n --prefer-dist--no-dev
+      - run: docker-compose exec -T app composer install -n --prefer-dist --no-dev
         if: ${{ !steps.cache-composer.outputs.cache-hit }}
 
       - name: Cache npm
