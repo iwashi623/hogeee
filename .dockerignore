@@ -1,0 +1,2 @@
+; node_modulesという名前のディレクトリは、Dockerデーモンへの送信対象外とする
+**/node_modules

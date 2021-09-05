@@ -1,0 +1,102 @@
+name: deploy
+
+on: 
+  #ブランチにコミットがプッシュされたときに処理が開始
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ap-northeast-1
+  # ワークフローの実行のきっかけとなったコミットSHAが入っている
+  IMAGE_TAG: ${{ github.sha }} 
+  SYSTEM_NAME: example 
+  SERVICE_NAME: foobar
+
+# Workflows > jobs > stepsという階層構造
+jobs:
+  deploy:
+    name: Deploy app to AWS Fargate
+    # runs-onは、ワークフローが実行される環境のOSやバージョン
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure aws credentials for prod
+        # ↓ mainブランチであるときのみ、このステップが処理される条件分岐（STGのときはdevelopにするなどする）
+        if: github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          # ${{}} はgihub.refコンテキストを参照
+          aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }} 
+          aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.PROD_AWS_ASSUME_ROLE_ARN }} 
+          role-duration-seconds: 1800
+      
+      - name: Set env vars for prod
+        if: github.ref == 'refs/heads/main'
+        run: echo "ENV_NAME=prod" >> $GITHUB_ENV
+      
+      # GitHub Actions内にリポジトリのコードをクローン（チェックアウト）する
+      - uses: actions/checkout@v2
+
+      # クローンしたリポジトリを起動
+      - run: docker-compose up -d --build app web
+
+      # ジョブ起動時に内容をチェックして、インストールすべき対象に変更がなければ、キャッシュを利用
+      - name: Cache composer
+        id: cache-composer
+        #  キャッシュの復元
+        uses: actions/cache@v2
+        with:
+        # pathに指定したディレクトリもしくはファイルを、keyに指定した名前でキャッシュ
+          path: backend/vendor
+        #  backend/composer.lockのSHA256ハッシュをkeyに含める
+          key: composer-v1-${{ hashFiles('backend/composer.lock') }}
+
+      # composer installで質問されても答えられないので -n オプションを付ける
+      - run: docker-compose exec -T app composer install -n --prefer-dist--no-dev
+        if: ${{ !steps.cache-composer.outputs.cache-hit }}
+
+      - name: Cache npm
+        id: cache-npm-ci
+        uses: actions/cache@v2
+        with:
+          path: backend/node_modules
+          key: npm-v1-${{ hashFiles('backend/package-lock.json') }}
+
+      # npm ci は npm install とほぼ同じ処理だが、package-lock.json を更新しない
+      - run: docker-compose exec -T web npm ci
+        if: ${{ !steps.cache-npm-ci.outputs.cache-hit }}
+      
+      - run: docker-compose exec -T web npm run prod
+
+      - uses: aws-actions/amazon-ecr-login@v1
+        id: amazon-ecr-login
+      
+      - name: Push nginx image to ecr
+        env:
+          DOCKER_BUILDKIT: 1
+          ECR_REGISTRY: ${{ steps.amazon-ecr-login.outputs.registry }} 
+          ECR_REPOSITORY: ${{ env.SYSTEM_NAME }}-${{ env.ENV_NAME }}-${{ ›env.SERVICE_NAME }}-nginx 
+        run: |
+          docker build \
+            --cache-from=$ECR_REGISTRY/$ECR_REPOSITORY:latest --build-argBUILDKIT_INLINE_CACHE=1 . \
+            -f infra/docker/nginx/Dockerfile \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Push php image to ecr
+        env:
+          DOCKER_BUILDKIT: 1
+          ECR_REGISTRY: ${{ steps.amazon-ecr-login.outputs.registry }} 
+          ECR_REPOSITORY: ${{ env.SYSTEM_NAME }}-${{ env.ENV_NAME }}-${{ env.SERVICE_NAME }}-php 
+        run: |
+          docker build \
+            --cache-from=$ECR_REGISTRY/$ECR_REPOSITORY:latest --build-arg BUILDKIT_INLINE_CACHE=1 . \
+            -f infra/docker/php/Dockerfile \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
