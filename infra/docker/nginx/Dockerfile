@@ -15,7 +15,8 @@ COPY --from=node /usr/local/lib /usr/local/lib
 # yarn command
 COPY --from=node /opt /opt
 # nginx config file
-COPY ./infra/docker/nginx/*.conf /etc/nginx/conf.d/
+COPY ./infra/docker/nginx/default.conf /etc/nginx/conf.d/
+COPY ./infra/docker/nginx/nginx.conf /etc/nginx/nginx.conf
 # ECRのPush時にはDockerfileからbuildされるため、こちらでもアプリケーションソースのコピーが必要
 # nginxに必要なのはPublicディレクトリのみなので、それのみコピー
 COPY ./backend/public /work/backend/public
